@@ -884,6 +884,27 @@ impl CudaServer {
     pub(crate) fn utilities(&self) -> Arc<ServerUtilities<Self>> {
         self.utilities.clone()
     }
+
+    /// Return the active CUDA stream handle for the given stream ID.
+    ///
+    /// Exposed for external CUDA libraries (cuSPARSE, cuBLAS, cuFFT) that need
+    /// `cusparseSetStream`-style stream sharing to avoid host syncs at the boundary
+    /// with cubecl-managed kernels.
+    ///
+    /// Pass `StreamId::current()` to get the stream that corresponds to the calling
+    /// thread's logical stream (the same convention cubecl uses internally).
+    ///
+    /// # Safety
+    ///
+    /// The returned handle is owned by cubecl. The caller MUST NOT destroy the stream
+    /// or queue work on it that conflicts with cubecl's ordering assumptions.
+    pub fn stream(&mut self, stream_id: StreamId) -> cudarc::driver::sys::CUstream {
+        let mut resolved = self
+            .streams
+            .resolve(stream_id, [].into_iter(), false)
+            .expect("Failed to resolve stream for CUstream handle");
+        resolved.current().sys
+    }
 }
 
 fn elem_to_tensor_map_type(ty: StorageType) -> CUtensorMapDataType {
