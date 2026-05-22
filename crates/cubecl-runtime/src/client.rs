@@ -314,6 +314,27 @@ impl<R: Runtime> ComputeClient<R> {
             })
     }
 
+    /// Run a closure with mutable access to the underlying server.
+    ///
+    /// Like [`Self::exclusive`] but the closure receives `&mut R::Server`,
+    /// giving external libraries (cuSPARSE, cuBLAS) the access they need
+    /// to call backend-specific methods such as `CudaServer::stream`.
+    ///
+    /// SAFETY of the returned values is the caller's responsibility — the
+    /// server is a low-level handle and most of its methods carry their
+    /// own safety contracts.
+    pub fn exclusive_with_server<'a, Re: Send, F: FnOnce(&mut R::Server) -> Re + Send + 'a>(
+        &'a self,
+        task: F,
+    ) -> Result<Re, ServerError> {
+        self.device
+            .submit_blocking(task)
+            .map_err(|err| ServerError::Generic {
+                reason: format!("exclusive_with_server: {err:?}"),
+                backtrace: BackTrace::capture(),
+            })
+    }
+
     /// dodo: Docs
     pub fn memory_persistent_allocation<
         'a,
