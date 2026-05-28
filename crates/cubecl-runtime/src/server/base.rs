@@ -387,6 +387,22 @@ where
     /// Flush all outstanding tasks in the server.
     fn flush(&mut self, stream_id: StreamId) -> Result<(), ServerError>;
 
+    /// Variant of [`Self::flush`] that does NOT host-sync.
+    ///
+    /// External libraries that drive cubecl's stream from inside a
+    /// `cuStreamBeginCapture` / `cuStreamEndCapture` region (e.g. ddrs's
+    /// SP-10 CUDA Graphs path) cannot tolerate the `cuEventSynchronize`
+    /// call that `flush` triggers via the drop-queue rotation — host-sync
+    /// inside a capture region invalidates the captured stream.
+    ///
+    /// The default implementation delegates to [`Self::flush`] so backends
+    /// that have nothing to do (or no analogous async path) keep working
+    /// unchanged. Backends like CUDA override to submit pending work
+    /// without draining the sync fence.
+    fn flush_async(&mut self, stream_id: StreamId) -> Result<(), ServerError> {
+        self.flush(stream_id)
+    }
+
     /// The current memory usage of the server.
     fn memory_usage(&mut self, stream_id: StreamId) -> Result<MemoryUsage, ServerError>;
 

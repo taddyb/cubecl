@@ -179,6 +179,36 @@ impl ComputeServer for CudaServer {
         Ok(())
     }
 
+    /// No-host-sync flush for use inside `cuStreamBeginCapture` regions.
+    ///
+    /// In CUDA, kernel launches (`cuLaunchKernel`) and async copies
+    /// (`cuMemcpyAsync`) are placed directly on the stream at the moment
+    /// they are issued — there is no batched submission queue to drain.
+    /// The host-syncing side-effect of [`Self::flush`] comes from
+    /// `drop_queue.flush(...)` syncing the *previous* fence and from
+    /// `storage().flush()` running deferred `cuMemFree` calls, both of
+    /// which block the host and invalidate an in-progress stream capture.
+    ///
+    /// `flush_async` therefore intentionally does nothing: pending kernels
+    /// are already on the stream by the time this is called. The caller
+    /// is responsible for draining the drop_queue *before* entering
+    /// capture (typically by calling [`Self::flush`] twice, since the
+    /// drop_queue is double-buffered).
+    fn flush_async(&mut self, stream_id: StreamId) -> Result<(), ServerError> {
+        // Resolve the command so error mode and stream selection are
+        // exercised consistently with `flush`, but skip both
+        // `drop_queue.flush` (syncs prior fence) and `storage().flush`
+        // (calls cuMemFree, can sync).
+        let _command = self.command_no_inputs(
+            stream_id,
+            StreamErrorMode {
+                ignore: false,
+                flush: false,
+            },
+        )?;
+        Ok(())
+    }
+
     fn sync(&mut self, stream_id: StreamId) -> DynFut<Result<(), ServerError>> {
         let command = self.command_no_inputs(
             stream_id,

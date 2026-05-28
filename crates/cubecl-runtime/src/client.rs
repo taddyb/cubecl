@@ -822,6 +822,24 @@ impl<R: Runtime> ComputeClient<R> {
             .unwrap()
     }
 
+    /// Flush all outstanding commands WITHOUT host-syncing.
+    ///
+    /// Calls [`ComputeServer::flush_async`] (rather than [`ComputeServer::flush`])
+    /// to submit pending work without triggering `cuEventSynchronize` /
+    /// the drop-queue's sync fence. Required inside
+    /// `cuStreamBeginCapture` regions where any host-sync invalidates the
+    /// capture; see ddrs SP-10 CUDA Graphs path.
+    ///
+    /// Most backends default to delegating back to `flush`. CUDA overrides
+    /// to a true no-op (kernel/copy submission is already on-stream).
+    pub fn flush_no_sync(&self) -> Result<(), ServerError> {
+        let stream_id = self.stream_id();
+
+        self.device
+            .submit_blocking(move |server| server.flush_async(stream_id))
+            .unwrap()
+    }
+
     /// Wait for the completion of every task in the server.
     pub fn sync(&self) -> DynFut<Result<(), ServerError>> {
         let stream_id = self.stream_id();
